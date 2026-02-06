@@ -1,0 +1,1 @@
+0 2 * * * PROJECT_DIR=/opt/knowrenewals BACKUP_DIR=/var/backups/knowrenewals /bin/sh /opt/knowrenewals/ops/backup.sh >> /var/log/knowrenewals_backup.log 2>&1
