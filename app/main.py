@@ -1,7 +1,7 @@
 import structlog
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +12,7 @@ from app.api.routes.admin import accounts, auth_events, billing_events, contract
 from app.core.config import get_settings
 from app.schemas.common import CommonResponse
 from app.db.session import engine
+from app.services.email import email_service
 
 logger = structlog.get_logger(__name__)
 settings = get_settings()
@@ -22,17 +23,25 @@ async def lifespan(app: FastAPI):
     logger.info("startup.complete", env=settings.app_env)
     yield
     await engine.dispose()
+    await email_service.close()
     logger.info("shutdown.complete")
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
-    allow_credentials=settings.cors_allow_credentials,
-    allow_methods=settings.cors_methods_list,
-    allow_headers=settings.cors_headers_list,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=settings.cors_origins_list,
+#     allow_credentials=settings.cors_allow_credentials,
+#     allow_methods=settings.cors_methods_list,
+#     allow_headers=settings.cors_headers_list,
+# )
 app.include_router(auth.router)
 app.include_router(contracts.router)
 app.include_router(billing.router)
@@ -46,6 +55,23 @@ app.include_router(billing_events.router)
 @app.get("/health", response_model=CommonResponse[dict[str, str]], tags=["health"])
 async def health() -> CommonResponse[dict[str, str]]:
     return CommonResponse(data={"status": "ok"}, status_code=200)
+
+
+@app.get("/health/smtp", response_model=CommonResponse[dict[str, str]], tags=["health"])
+async def health_smtp() -> CommonResponse[dict[str, str]]:
+    try:
+        await email_service.check_connection()
+    except Exception as exc:
+        logger.error("health.smtp_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"SMTP check failed: {exc.__class__.__name__}: {str(exc)}",
+        ) from exc
+    return CommonResponse(
+        data={"status": "ok", "smtp": "reachable"},
+        message="SMTP connection successful.",
+        status_code=status.HTTP_200_OK,
+    )
 
 
 @app.exception_handler(StarletteHTTPException)

@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import secrets
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from jose import JWTError
 from redis.asyncio import Redis
@@ -22,24 +23,39 @@ from app.db.models.auth_event import AuthEvent
 from app.db.models.refresh_token import RefreshToken
 from app.db.models.user import User
 from app.db.session import get_db
-from app.schemas.auth import LoginRequest, RefreshRequest, SignupRequest, SignupResponse, TokenPair, VerifyEmailRequest
+from app.schemas.auth import (
+    LoginRequest,
+    RefreshRequest,
+    ResendVerificationRequest,
+    SignupRequest,
+    SignupResponse,
+    TokenPair,
+    VerifyEmailRequest,
+)
 from app.schemas.common import CommonResponse
 from app.services.email import email_service
 from app.core.redis import get_redis_client
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
+logger = structlog.get_logger(__name__)
 
 
 @router.post("/signup", response_model=CommonResponse[SignupResponse], dependencies=[Depends(rate_limit_auth)])
 async def signup(payload: SignupRequest, request: Request, db: AsyncSession = Depends(get_db)) -> CommonResponse[SignupResponse]:
-    existing_user = await db.scalar(select(User).where(User.email == payload.email))
+    normalized_email = _normalize_email(payload.email)
+    existing_user = await db.scalar(select(User).where(User.email == normalized_email))
     if existing_user:
+        if not existing_user.is_email_verified:
+            return CommonResponse(
+                data=SignupResponse(message="Account exists but email is not verified. Use resend verification."),
+                status_code=status.HTTP_200_OK,
+            )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
 
     _ensure_password_policy(payload.password)
-    account = Account(name=payload.account_name, owner_email=payload.email, status="trialing")
-    user = User(email=payload.email, password_hash=get_password_hash(payload.password))
+    account = Account(name=payload.account_name, owner_email=normalized_email, status="trialing")
+    user = User(email=normalized_email, password_hash=get_password_hash(payload.password))
     verification_token = _attach_email_verification(user)
     account.users.append(user)
 
@@ -47,7 +63,15 @@ async def signup(payload: SignupRequest, request: Request, db: AsyncSession = De
     await db.commit()
     await db.refresh(user)
 
-    await email_service.send_verification_email(user.email, verification_token)
+    try:
+        await email_service.send_verification_email(user.email, verification_token)
+    except Exception as exc:
+        logger.error("signup.verification_email_failed", user_id=user.id, email=user.email, error=str(exc))
+        await _log_auth_event(db, user.id, "signup", request, False)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Account created, but verification email could not be sent. Please use resend verification.",
+        ) from exc
     await _log_auth_event(db, user.id, "signup", request, True)
     return CommonResponse(
         data=SignupResponse(message="Signup successful. Check your email to verify your account."),
@@ -62,7 +86,8 @@ async def login(
     redis: Redis = Depends(get_redis_client),
     db: AsyncSession = Depends(get_db),
 ) -> CommonResponse[TokenPair]:
-    user = await db.scalar(select(User).where(User.email == payload.email))
+    normalized_email = _normalize_email(payload.email)
+    user = await db.scalar(select(User).where(User.email == normalized_email))
     if not user:
         await _log_auth_event(db, None, "login", request, False)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
@@ -121,25 +146,88 @@ async def refresh(payload: RefreshRequest, request: Request, db: AsyncSession = 
     return CommonResponse(data=new_tokens, status_code=status.HTTP_200_OK)
 
 
-@router.post("/verify-email", response_model=CommonResponse[SignupResponse])
+@router.post("/verify-email", response_model=CommonResponse[TokenPair])
 async def verify_email(
     payload: VerifyEmailRequest, request: Request, db: AsyncSession = Depends(get_db)
-) -> CommonResponse[SignupResponse]:
+) -> CommonResponse[TokenPair]:
     token_hash = _hash_token(payload.token)
     user = await db.scalar(select(User).where(User.email_verification_hash == token_hash))
-    if not user or user.is_email_verified:
+    if not user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification token")
+
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Inactive user")
+
+    if user.is_email_verified:
+        tokens = await _issue_tokens(user.id, db)
+        return CommonResponse(
+            data=tokens,
+            message="Email already verified.",
+            status_code=status.HTTP_200_OK,
+        )
 
     if not user.email_verification_expires_at or user.email_verification_expires_at < _now_utc():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Verification token expired")
 
     user.is_email_verified = True
-    user.email_verification_hash = None
-    user.email_verification_expires_at = None
     await db.commit()
     await _log_auth_event(db, user.id, "verify_email", request, True)
+    tokens = await _issue_tokens(user.id, db)
     return CommonResponse(
-        data=SignupResponse(message="Email verified. You can now log in."),
+        data=tokens,
+        message="Email verified.",
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@router.post(
+    "/resend-verification",
+    response_model=CommonResponse[SignupResponse],
+    dependencies=[Depends(rate_limit_auth)],
+)
+async def resend_verification(
+    payload: ResendVerificationRequest,
+    request: Request,
+    redis: Redis = Depends(get_redis_client),
+    db: AsyncSession = Depends(get_db),
+) -> CommonResponse[SignupResponse]:
+    normalized_email = _normalize_email(payload.email)
+    await _enforce_resend_cooldown(normalized_email, redis)
+
+    user = await db.scalar(select(User).where(User.email == normalized_email))
+    if not user:
+        await _mark_resend_cooldown(normalized_email, redis)
+        return CommonResponse(
+            data=SignupResponse(message="If an account exists, a new verification email has been sent."),
+            status_code=status.HTTP_200_OK,
+        )
+
+    if user.is_email_verified:
+        await _mark_resend_cooldown(normalized_email, redis)
+        return CommonResponse(
+            data=SignupResponse(message="Email is already verified. You can log in."),
+            status_code=status.HTTP_200_OK,
+        )
+
+    user_id = user.id
+    user_email = user.email
+    verification_token = _attach_email_verification(user)
+    await db.flush()
+    try:
+        await email_service.send_verification_email(user_email, verification_token)
+    except Exception as exc:
+        await db.rollback()
+        logger.error("resend.verification_email_failed", user_id=user_id, email=user_email, error=str(exc))
+        await _log_auth_event(db, user_id, "resend_verification", request, False)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not resend verification email. Please try again.",
+        ) from exc
+    await db.commit()
+    await _mark_resend_cooldown(normalized_email, redis)
+    await _log_auth_event(db, user_id, "resend_verification", request, True)
+    return CommonResponse(
+        data=SignupResponse(message="Verification email sent. Please check your inbox."),
         status_code=status.HTTP_200_OK,
     )
 
@@ -152,8 +240,8 @@ async def _issue_tokens(user_id: str, db: AsyncSession) -> TokenPair:
 
 
 def _ensure_password_policy(password: str) -> None:
-    if len(password) < 12:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password must be at least 12 characters")
+    if len(password) < 8:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password must be at least 8 characters")
     if len(password.encode("utf-8")) > 72:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -218,3 +306,22 @@ async def _record_failed_login(user_id: str, redis: Redis) -> None:
 async def _clear_failed_logins(user_id: str, redis: Redis) -> None:
     key = f"auth:fail:{user_id}"
     await redis.delete(key)
+
+
+def _normalize_email(email: str) -> str:
+    return email.strip().lower()
+
+
+async def _enforce_resend_cooldown(email: str, redis: Redis) -> None:
+    key = f"verify:resend:{email}"
+    ttl = await redis.ttl(key)
+    if ttl and ttl > 0:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Please wait {ttl} seconds before requesting another verification email.",
+        )
+
+
+async def _mark_resend_cooldown(email: str, redis: Redis) -> None:
+    key = f"verify:resend:{email}"
+    await redis.set(key, "1", ex=settings.resend_verification_cooldown_seconds)

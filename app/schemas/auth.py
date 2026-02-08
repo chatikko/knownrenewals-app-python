@@ -28,3 +28,7 @@ class SignupResponse(BaseModel):
 
 class VerifyEmailRequest(BaseModel):
     token: str
+
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr

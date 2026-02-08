@@ -7,6 +7,7 @@ class Settings(BaseSettings):
 
     app_name: str = "knowrenewals"
     app_env: str = "local"
+    frontend_base_url: str = "http://localhost:5173"
 
     database_url: str
     redis_url: str
@@ -21,6 +22,10 @@ class Settings(BaseSettings):
     smtp_user: str | None = None
     smtp_password: str | None = None
     mail_from: str
+    smtp_timeout_seconds: int = 20
+    smtp_max_retries: int = 3
+    smtp_base_backoff_seconds: float = 0.5
+    smtp_max_idle_seconds: int = 60
 
     stripe_api_key: str
     stripe_webhook_secret: str
@@ -34,6 +39,7 @@ class Settings(BaseSettings):
     auth_lockout_window_seconds: int = 900
 
     email_verification_expire_minutes: int = 60 * 24
+    resend_verification_cooldown_seconds: int = 60
 
     admin_emails: str = ""
 
