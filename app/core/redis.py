@@ -8,4 +8,5 @@ redis_client = aioredis.from_url(settings.redis_url, encoding="utf-8", decode_re
 
 
 def get_redis_client() -> aioredis.Redis:
+    print(redis_client, 'redis_clientlllllllllllllllllll')
     return redis_client

@@ -19,8 +19,14 @@ async def rate_limit_auth(request: Request, redis: Redis = Depends(get_redis_cli
     """
     Naive fixed-window limiter keyed by IP path for signup/login flows.
     """
+    
     limiter_key = f"rl:{request.client.host}:{request.url.path}"
-    current = await redis.incr(limiter_key)
+    print(limiter_key, 'limiter_key')
+    try:
+        current = await redis.incr(limiter_key)
+    except Exception as e:
+        print(e, 'redis1111111111111111111')
+        return 
     if current == 1:
         await redis.expire(limiter_key, settings.rate_limit_window_seconds)
     if current > settings.rate_limit_auth:
