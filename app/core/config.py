@@ -17,15 +17,10 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_minutes: int = 60 * 24 * 7
 
-    smtp_host: str
-    smtp_port: int = 587
-    smtp_user: str | None = None
-    smtp_password: str | None = None
     mail_from: str
-    smtp_timeout_seconds: int = 20
-    smtp_max_retries: int = 3
-    smtp_base_backoff_seconds: float = 0.5
-    smtp_max_idle_seconds: int = 60
+    resend_api_key: str | None = None
+    resend_max_retries: int = 3
+    resend_base_backoff_seconds: float = 0.5
 
     stripe_api_key: str
     stripe_webhook_secret: str

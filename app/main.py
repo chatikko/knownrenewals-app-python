@@ -57,19 +57,20 @@ async def health() -> CommonResponse[dict[str, str]]:
     return CommonResponse(data={"status": "ok"}, status_code=200)
 
 
+@app.get("/health/email", response_model=CommonResponse[dict[str, str]], tags=["health"])
 @app.get("/health/smtp", response_model=CommonResponse[dict[str, str]], tags=["health"])
-async def health_smtp() -> CommonResponse[dict[str, str]]:
+async def health_email() -> CommonResponse[dict[str, str]]:
     try:
         await email_service.check_connection()
     except Exception as exc:
-        logger.error("health.smtp_failed", error=str(exc))
+        logger.error("health.email_provider_failed", error=str(exc))
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"SMTP check failed: {exc.__class__.__name__}: {str(exc)}",
+            detail=f"Email provider check failed: {exc.__class__.__name__}: {str(exc)}",
         ) from exc
     return CommonResponse(
-        data={"status": "ok", "smtp": "reachable"},
-        message="SMTP connection successful.",
+        data={"status": "ok", "provider": "resend"},
+        message="Email provider connection successful.",
         status_code=status.HTTP_200_OK,
     )
 
