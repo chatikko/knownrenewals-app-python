@@ -120,6 +120,11 @@ async def delete_member(
 def _ensure_member_manager(current_user: User, account: Account | None) -> None:
     if not account:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+    if account.plan_tier not in {"pro", "team"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Team management is available only on Pro and Team plans.",
+        )
     is_owner = _normalize_email(current_user.email) == _normalize_email(account.owner_email)
     if not (current_user.is_admin or is_owner):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
