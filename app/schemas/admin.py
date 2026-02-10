@@ -46,6 +46,8 @@ class AdminContractRead(BaseModel):
     id: str
     account_id: str
     vendor_name: str
+    renewal_type: str
+    renewal_name: str
     contract_name: str | None
     renewal_date: date
     notice_period_days: int

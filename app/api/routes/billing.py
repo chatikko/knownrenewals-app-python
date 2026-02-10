@@ -95,13 +95,13 @@ async def _handle_event(event: dict, db: AsyncSession) -> Account | None:
         account.stripe_customer_id = customer_id
         account.stripe_subscription_id = subscription_id
         if plan:
-            account.plan = plan
+            account.plan = _normalize_account_plan(plan)
         account.status = "active"
     elif event_type == "invoice.paid" and account:
         account.status = "active"
         plan = _plan_from_invoice(data)
         if plan:
-            account.plan = plan
+            account.plan = _normalize_account_plan(plan)
     elif event_type == "invoice.payment_failed" and account:
         account.status = "past_due"
     elif event_type == "customer.subscription.deleted" and account:
@@ -140,3 +140,9 @@ def _plan_from_invoice(payload: dict) -> str | None:
     price_id = lines[0].get("price", {}).get("id")
     inverse_map = {v: k for k, v in stripe_service.plan_price_map.items()}
     return inverse_map.get(price_id)
+
+
+def _normalize_account_plan(plan_key: str) -> str:
+    if plan_key.endswith("_yearly") or plan_key == "yearly":
+        return "yearly"
+    return "monthly"

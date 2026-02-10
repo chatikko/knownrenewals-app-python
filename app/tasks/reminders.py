@@ -54,7 +54,8 @@ async def _send_contract_reminder(contract_id: str, days_before: int) -> None:
         subject = f"[knowrenewals] {contract.vendor_name} renewal notice"
         body = (
             f"Vendor: {contract.vendor_name}\n"
-            f"Contract: {contract.contract_name or 'n/a'}\n"
+            f"Renewal: {contract.renewal_name or contract.contract_name or 'n/a'}\n"
+            f"Type: {contract.renewal_type}\n"
             f"Renewal date: {contract.renewal_date}\n"
             f"Notice deadline: {contract.notice_deadline}\n"
             f"This is your {days_before}-day reminder."

@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     stripe_webhook_secret: str
     stripe_price_monthly: str
     stripe_price_yearly: str
+    stripe_price_founders_monthly: str | None = None
+    stripe_price_founders_yearly: str | None = None
+    stripe_price_pro_monthly: str | None = None
+    stripe_price_pro_yearly: str | None = None
+    stripe_price_team_monthly: str | None = None
+    stripe_price_team_yearly: str | None = None
 
     rate_limit_auth: int = 5
     rate_limit_window_seconds: int = 300

@@ -4,7 +4,16 @@ from pydantic import BaseModel, HttpUrl
 
 
 class CheckoutSessionRequest(BaseModel):
-    plan: Literal["monthly", "yearly"]
+    plan: Literal[
+        "monthly",
+        "yearly",
+        "founders_monthly",
+        "founders_yearly",
+        "pro_monthly",
+        "pro_yearly",
+        "team_monthly",
+        "team_yearly",
+    ]
     success_url: HttpUrl
     cancel_url: HttpUrl
 

@@ -4,10 +4,13 @@ from typing import Literal
 from pydantic import BaseModel, EmailStr, Field
 
 ContractStatus = Literal["safe", "soon", "risk"]
+RenewalType = Literal["Subscription", "Contract", "License", "Domain", "Certificate", "Other"]
 
 
 class ContractBase(BaseModel):
     vendor_name: str = Field(..., max_length=255)
+    renewal_type: RenewalType = "Contract"
+    renewal_name: str | None = Field(default=None, min_length=1, max_length=255)
     contract_name: str | None = Field(default=None, max_length=255)
     renewal_date: date
     notice_period_days: int = Field(ge=0)
@@ -20,6 +23,8 @@ class ContractCreate(ContractBase):
 
 class ContractUpdate(BaseModel):
     vendor_name: str | None = None
+    renewal_type: RenewalType | None = None
+    renewal_name: str | None = Field(default=None, min_length=1, max_length=255)
     contract_name: str | None = None
     renewal_date: date | None = None
     notice_period_days: int | None = Field(default=None, ge=0)
@@ -28,6 +33,7 @@ class ContractUpdate(BaseModel):
 
 
 class ContractRead(ContractBase):
+    renewal_name: str
     id: str
     account_id: str
     notice_deadline: date

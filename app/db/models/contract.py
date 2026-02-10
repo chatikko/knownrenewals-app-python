@@ -15,6 +15,12 @@ class Contract(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False, index=True)
     vendor_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    renewal_type: Mapped[str] = mapped_column(
+        Enum("Subscription", "Contract", "License", "Domain", "Certificate", "Other", name="renewal_type_enum"),
+        nullable=False,
+        default="Contract",
+    )
+    renewal_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     contract_name: Mapped[str | None] = mapped_column(String(255))
     renewal_date: Mapped[date] = mapped_column(nullable=False)
     notice_period_days: Mapped[int] = mapped_column(nullable=False, default=30)

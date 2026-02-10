@@ -32,9 +32,16 @@ async def create_contract(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> CommonResponse[ContractRead]:
+    payload_data = payload.model_dump()
+    renewal_type = payload_data.get("renewal_type") or "Contract"
+    renewal_name = payload_data.get("renewal_name") or payload_data.get("contract_name") or payload_data.get("vendor_name")
+    payload_data["renewal_type"] = renewal_type
+    payload_data["renewal_name"] = renewal_name
+    payload_data["contract_name"] = payload_data.get("contract_name") or _compose_contract_name(renewal_type, renewal_name)
+
     contract = Contract(
         account_id=current_user.account_id,
-        **payload.model_dump(),
+        **payload_data,
     )
     contract.notice_deadline = Contract.compute_notice_deadline(payload.renewal_date, payload.notice_period_days)
     contract.status = _derive_status(contract.notice_deadline)
@@ -65,6 +72,16 @@ async def update_contract(
     contract = await _get_contract_or_404(contract_id, current_user, db)
 
     updates = payload.model_dump(exclude_unset=True)
+    if "renewal_type" in updates or "renewal_name" in updates or "contract_name" in updates:
+        renewal_type = updates.get("renewal_type", contract.renewal_type)
+        renewal_name = updates.get("renewal_name", contract.renewal_name)
+        if "contract_name" in updates and not updates.get("renewal_name"):
+            renewal_name = updates["contract_name"] or renewal_name
+
+        updates["renewal_type"] = renewal_type
+        updates["renewal_name"] = renewal_name
+        updates["contract_name"] = updates.get("contract_name") or _compose_contract_name(renewal_type, renewal_name)
+
     for field, value in updates.items():
         setattr(contract, field, value)
 
@@ -103,3 +120,7 @@ def _derive_status(notice_deadline: date) -> str:
     if days_until <= 30:
         return "soon"
     return "safe"
+
+
+def _compose_contract_name(renewal_type: str, renewal_name: str) -> str:
+    return f"[{renewal_type}] {renewal_name}".strip()

@@ -13,9 +13,21 @@ stripe.api_key = settings.stripe_api_key
 class StripeService:
     def __init__(self) -> None:
         self.webhook_secret = settings.stripe_webhook_secret
+        founders_monthly = settings.stripe_price_founders_monthly or settings.stripe_price_monthly
+        founders_yearly = settings.stripe_price_founders_yearly or settings.stripe_price_yearly
+        pro_monthly = settings.stripe_price_pro_monthly or settings.stripe_price_monthly
+        pro_yearly = settings.stripe_price_pro_yearly or settings.stripe_price_yearly
+        team_monthly = settings.stripe_price_team_monthly or settings.stripe_price_monthly
+        team_yearly = settings.stripe_price_team_yearly or settings.stripe_price_yearly
         self.plan_price_map = {
-            "monthly": settings.stripe_price_monthly,
-            "yearly": settings.stripe_price_yearly,
+            "founders_monthly": founders_monthly,
+            "founders_yearly": founders_yearly,
+            "pro_monthly": pro_monthly,
+            "pro_yearly": pro_yearly,
+            "team_monthly": team_monthly,
+            "team_yearly": team_yearly,
+            "monthly": pro_monthly,
+            "yearly": pro_yearly,
         }
 
     def create_checkout_session(
