@@ -72,5 +72,23 @@ class StripeService:
         except (ValueError, SignatureVerificationError) as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid webhook") from exc
 
+    def get_subscription(self, subscription_id: str) -> stripe.Subscription:
+        try:
+            return stripe.Subscription.retrieve(subscription_id)
+        except stripe.error.StripeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Stripe subscription lookup failed: {getattr(exc, 'user_message', None) or str(exc)}",
+            ) from exc
+
+    def set_cancel_at_period_end(self, subscription_id: str, value: bool) -> stripe.Subscription:
+        try:
+            return stripe.Subscription.modify(subscription_id, cancel_at_period_end=value)
+        except stripe.error.StripeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Stripe subscription update failed: {getattr(exc, 'user_message', None) or str(exc)}",
+            ) from exc
+
 
 stripe_service = StripeService()

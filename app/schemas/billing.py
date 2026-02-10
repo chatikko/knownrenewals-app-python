@@ -22,9 +22,16 @@ class CheckoutSessionResponse(BaseModel):
     url: HttpUrl
 
 
+class BillingActionResponse(BaseModel):
+    message: str
+
+
 class BillingStatusResponse(BaseModel):
     plan_tier: str | None = None
     plan: str | None = None
     status: str | None = None
+    cancel_at_period_end: bool = False
+    founders_available: bool = True
+    founders_slots_remaining: int | None = None
     stripe_customer_id: str | None = None
     stripe_subscription_id: str | None = None

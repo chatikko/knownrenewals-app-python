@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Header, Request, status
-from sqlalchemy import select
+import structlog
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
@@ -7,12 +8,13 @@ from app.db.models.account import Account
 from app.db.models.billing import BillingEvent
 from app.db.models.user import User
 from app.db.session import get_db
-from app.schemas.billing import BillingStatusResponse, CheckoutSessionRequest, CheckoutSessionResponse
+from app.schemas.billing import BillingActionResponse, BillingStatusResponse, CheckoutSessionRequest, CheckoutSessionResponse
 from app.schemas.common import CommonResponse
 from app.services.account_limits import normalize_plan_tier
 from app.services.stripe import stripe_service
 
 router = APIRouter(prefix="/billing", tags=["billing"])
+logger = structlog.get_logger(__name__)
 SUPPORTED_WEBHOOK_EVENTS = {
     "checkout.session.completed",
     "invoice.paid",
@@ -26,10 +28,31 @@ async def billing_status(
     current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> CommonResponse[BillingStatusResponse]:
     account = await db.get(Account, current_user.account_id)
+    cancel_at_period_end = False
+    if account and account.stripe_subscription_id:
+        try:
+            subscription = stripe_service.get_subscription(account.stripe_subscription_id)
+            cancel_at_period_end = bool(getattr(subscription, "cancel_at_period_end", False))
+        except Exception as exc:
+            logger.warning(
+                "billing.status.subscription_lookup_failed",
+                account_id=getattr(account, "id", None),
+                subscription_id=account.stripe_subscription_id,
+                error=str(exc),
+            )
+
+    founders_count = await db.scalar(select(func.count()).select_from(Account).where(Account.plan_tier == "founders"))
+    founders_limit = 50
+    founders_slots_remaining = max(0, founders_limit - int(founders_count or 0))
+    founders_available = founders_slots_remaining > 0
+
     data = BillingStatusResponse(
         plan_tier=getattr(account, "plan_tier", None),
         plan=account.plan,
         status=account.status,
+        cancel_at_period_end=cancel_at_period_end,
+        founders_available=founders_available,
+        founders_slots_remaining=founders_slots_remaining,
         stripe_customer_id=account.stripe_customer_id,
         stripe_subscription_id=account.stripe_subscription_id,
     )
@@ -51,6 +74,44 @@ async def create_checkout_session(
         customer_id=account.stripe_customer_id,
     )
     return CommonResponse(data=CheckoutSessionResponse(url=session.url), status_code=status.HTTP_200_OK)
+
+
+@router.post("/cancel", response_model=CommonResponse[BillingActionResponse])
+async def cancel_subscription(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CommonResponse[BillingActionResponse]:
+    account = await db.get(Account, current_user.account_id)
+    if not account or not account.stripe_subscription_id:
+        return CommonResponse(
+            data=BillingActionResponse(message="No active Stripe subscription found."),
+            status_code=status.HTTP_200_OK,
+        )
+
+    stripe_service.set_cancel_at_period_end(account.stripe_subscription_id, True)
+    return CommonResponse(
+        data=BillingActionResponse(message="Subscription will cancel at period end."),
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@router.post("/resume", response_model=CommonResponse[BillingActionResponse])
+async def resume_subscription(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CommonResponse[BillingActionResponse]:
+    account = await db.get(Account, current_user.account_id)
+    if not account or not account.stripe_subscription_id:
+        return CommonResponse(
+            data=BillingActionResponse(message="No active Stripe subscription found."),
+            status_code=status.HTTP_200_OK,
+        )
+
+    stripe_service.set_cancel_at_period_end(account.stripe_subscription_id, False)
+    return CommonResponse(
+        data=BillingActionResponse(message="Subscription resumed."),
+        status_code=status.HTTP_200_OK,
+    )
 
 
 @router.post("/webhook")
