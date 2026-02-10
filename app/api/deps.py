@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.redis import get_redis_client
 from app.core.security import decode_token
+from app.db.models.account import Account
 from app.db.models.user import User
 from app.db.session import get_db
 
@@ -62,3 +63,19 @@ async def get_current_admin(
     if not user.is_admin and user.email.lower() not in admin_emails:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
     return user
+
+
+async def get_current_billing_active_user(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    account = await db.get(Account, current_user.account_id)
+    if not account:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+
+    if account.status not in {"active", "trialing"}:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Active subscription required. Please update billing to continue.",
+        )
+    return current_user

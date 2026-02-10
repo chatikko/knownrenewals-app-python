@@ -31,6 +31,7 @@ class BillingStatusResponse(BaseModel):
     plan: str | None = None
     status: str | None = None
     cancel_at_period_end: bool = False
+    trial_days_left: int | None = None
     founders_available: bool = True
     founders_slots_remaining: int | None = None
     stripe_customer_id: str | None = None
