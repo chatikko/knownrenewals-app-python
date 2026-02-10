@@ -27,6 +27,7 @@ class AdminAccountRead(BaseModel):
     id: str
     name: str
     owner_email: EmailStr
+    plan_tier: str
     plan: str
     status: str
     stripe_customer_id: str | None
@@ -38,6 +39,7 @@ class AdminAccountRead(BaseModel):
 
 
 class AdminAccountUpdate(BaseModel):
+    plan_tier: Literal["founders", "pro", "team"] | None = None
     plan: Literal["monthly", "yearly"] | None = None
     status: Literal["inactive", "trialing", "active", "past_due", "canceled"] | None = None
 

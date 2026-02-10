@@ -12,6 +12,7 @@ class Account(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     owner_email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     stripe_customer_id: Mapped[str | None] = mapped_column(String(255), unique=True)
     stripe_subscription_id: Mapped[str | None] = mapped_column(String(255), unique=True)
+    plan_tier: Mapped[str] = mapped_column(Enum("founders", "pro", "team", name="plan_tier_enum"), default="pro")
     plan: Mapped[str] = mapped_column(Enum("monthly", "yearly", name="plan_enum"), default="monthly")
     status: Mapped[str] = mapped_column(
         Enum("inactive", "trialing", "active", "past_due", "canceled", name="account_status_enum"), default="inactive"

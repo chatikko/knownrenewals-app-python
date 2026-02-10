@@ -23,6 +23,7 @@ class CheckoutSessionResponse(BaseModel):
 
 
 class BillingStatusResponse(BaseModel):
+    plan_tier: str | None = None
     plan: str | None = None
     status: str | None = None
     stripe_customer_id: str | None = None

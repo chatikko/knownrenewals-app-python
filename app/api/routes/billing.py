@@ -9,6 +9,7 @@ from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.billing import BillingStatusResponse, CheckoutSessionRequest, CheckoutSessionResponse
 from app.schemas.common import CommonResponse
+from app.services.account_limits import normalize_plan_tier
 from app.services.stripe import stripe_service
 
 router = APIRouter(prefix="/billing", tags=["billing"])
@@ -26,6 +27,7 @@ async def billing_status(
 ) -> CommonResponse[BillingStatusResponse]:
     account = await db.get(Account, current_user.account_id)
     data = BillingStatusResponse(
+        plan_tier=getattr(account, "plan_tier", None),
         plan=account.plan,
         status=account.status,
         stripe_customer_id=account.stripe_customer_id,
@@ -95,12 +97,14 @@ async def _handle_event(event: dict, db: AsyncSession) -> Account | None:
         account.stripe_customer_id = customer_id
         account.stripe_subscription_id = subscription_id
         if plan:
+            account.plan_tier = _tier_from_plan_key(plan)
             account.plan = _normalize_account_plan(plan)
         account.status = "active"
     elif event_type == "invoice.paid" and account:
         account.status = "active"
         plan = _plan_from_invoice(data)
         if plan:
+            account.plan_tier = _tier_from_plan_key(plan)
             account.plan = _normalize_account_plan(plan)
     elif event_type == "invoice.payment_failed" and account:
         account.status = "past_due"
@@ -146,3 +150,13 @@ def _normalize_account_plan(plan_key: str) -> str:
     if plan_key.endswith("_yearly") or plan_key == "yearly":
         return "yearly"
     return "monthly"
+
+
+def _tier_from_plan_key(plan_key: str) -> str:
+    if plan_key.startswith("founders_"):
+        return "founders"
+    if plan_key.startswith("team_"):
+        return "team"
+    if plan_key.startswith("pro_"):
+        return "pro"
+    return normalize_plan_tier(None)

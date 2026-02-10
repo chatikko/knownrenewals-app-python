@@ -12,7 +12,7 @@ from app.schemas.auth import LoginRequest, RefreshRequest, SignupRequest, Signup
 from app.schemas.billing import BillingStatusResponse, CheckoutSessionRequest, CheckoutSessionResponse
 from app.schemas.common import CommonResponse, ListResponse
 from app.schemas.contract import ContractCreate, ContractRead, ContractUpdate
-from app.schemas.user import UserCreate, UserRead
+from app.schemas.user import MemberCreate, MemberRead, UserCreate, UserRead
 
 __all__ = [
     "LoginRequest",
@@ -39,4 +39,6 @@ __all__ = [
     "ContractUpdate",
     "UserCreate",
     "UserRead",
+    "MemberCreate",
+    "MemberRead",
 ]

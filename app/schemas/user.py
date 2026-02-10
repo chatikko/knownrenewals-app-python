@@ -19,3 +19,21 @@ class UserRead(UserBase):
 
     class Config:
         from_attributes = True
+
+
+class MemberCreate(BaseModel):
+    email: EmailStr
+    password: str
+    is_admin: bool = False
+
+
+class MemberRead(UserBase):
+    id: str
+    account_id: str
+    is_active: bool
+    is_email_verified: bool
+    is_admin: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
