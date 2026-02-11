@@ -39,7 +39,7 @@ class AdminAccountRead(BaseModel):
 
 
 class AdminAccountUpdate(BaseModel):
-    plan_tier: Literal["founders", "pro", "team"] | None = None
+    plan_tier: Literal["trialing", "founders", "pro", "team"] | None = None
     plan: Literal["monthly", "yearly"] | None = None
     status: Literal["inactive", "trialing", "active", "past_due", "canceled"] | None = None
 

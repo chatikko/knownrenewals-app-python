@@ -3,6 +3,7 @@ from app.db.models.account import Account
 DEFAULT_PLAN_TIER = "pro"
 
 PLAN_SEAT_LIMITS: dict[str, int] = {
+    "trialing": 1,
     "founders": 1,
     "pro": 5,
     "team": 15,

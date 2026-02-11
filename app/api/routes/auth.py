@@ -54,7 +54,7 @@ async def signup(payload: SignupRequest, request: Request, db: AsyncSession = De
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
 
     _ensure_password_policy(payload.password)
-    account = Account(name=payload.account_name, owner_email=normalized_email, status="trialing")
+    account = Account(name=payload.account_name, owner_email=normalized_email, status="inactive")
     user = User(email=normalized_email, password_hash=get_password_hash(payload.password))
     verification_token = _attach_email_verification(user)
     account.users.append(user)
