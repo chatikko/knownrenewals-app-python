@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+﻿from datetime import datetime, timedelta, timezone
 import hashlib
 import secrets
 
@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_billing_active_user
+from app.api.deps import get_current_billing_read_user, get_current_billing_write_user
 from app.core.config import get_settings
 from app.core.security import get_password_hash
 from app.db.models.account import Account
@@ -23,7 +23,7 @@ settings = get_settings()
 
 @router.get("/members", response_model=ListResponse[MemberRead])
 async def list_members(
-    current_user: User = Depends(get_current_billing_active_user),
+    current_user: User = Depends(get_current_billing_read_user),
     db: AsyncSession = Depends(get_db),
 ) -> ListResponse[MemberRead]:
     account = await db.get(Account, current_user.account_id)
@@ -39,7 +39,7 @@ async def list_members(
 @router.post("/members", response_model=CommonResponse[MemberRead], status_code=status.HTTP_201_CREATED)
 async def create_member(
     payload: MemberCreate,
-    current_user: User = Depends(get_current_billing_active_user),
+    current_user: User = Depends(get_current_billing_write_user),
     db: AsyncSession = Depends(get_db),
 ) -> CommonResponse[MemberRead]:
     account = await db.get(Account, current_user.account_id)
@@ -92,7 +92,7 @@ async def create_member(
 @router.delete("/members/{user_id}", response_model=CommonResponse[None], status_code=status.HTTP_200_OK)
 async def delete_member(
     user_id: str,
-    current_user: User = Depends(get_current_billing_active_user),
+    current_user: User = Depends(get_current_billing_write_user),
     db: AsyncSession = Depends(get_db),
 ) -> CommonResponse[None]:
     account = await db.get(Account, current_user.account_id)

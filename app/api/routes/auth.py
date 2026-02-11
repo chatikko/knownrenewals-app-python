@@ -102,6 +102,7 @@ async def login(
         await _log_auth_event(db, user.id, "login", request, False)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Email not verified")
 
+    await _sync_account_status_on_auth(user, db)
     await _clear_failed_logins(user.id, redis)
     await _log_auth_event(db, user.id, "login", request, True)
     tokens = await _issue_tokens(user.id, db)
@@ -159,6 +160,7 @@ async def verify_email(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Inactive user")
 
     if user.is_email_verified:
+        await _sync_account_status_on_auth(user, db)
         tokens = await _issue_tokens(user.id, db)
         return CommonResponse(
             data=tokens,
@@ -170,6 +172,7 @@ async def verify_email(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Verification token expired")
 
     user.is_email_verified = True
+    await _sync_account_status_on_auth(user, db)
     await db.commit()
     await _log_auth_event(db, user.id, "verify_email", request, True)
     tokens = await _issue_tokens(user.id, db)
@@ -237,6 +240,18 @@ async def _issue_tokens(user_id: str, db: AsyncSession) -> TokenPair:
     refresh = create_refresh_token(user_id, settings.jwt_refresh_secret, settings.refresh_token_expire_minutes)
     await _store_refresh_token(user_id, refresh, db)
     return TokenPair(access_token=access, refresh_token=refresh)
+
+
+async def _sync_account_status_on_auth(user: User, db: AsyncSession) -> None:
+    account = await db.get(Account, user.account_id)
+    if not account:
+        return
+
+    # New accounts start as inactive until first successful auth/verification.
+    # Move them into trial state unless a paid Stripe subscription already exists.
+    if account.status == "inactive" and not account.stripe_subscription_id:
+        account.status = "trialing"
+        account.plan_tier = "trialing"
 
 
 def _ensure_password_policy(password: str) -> None:

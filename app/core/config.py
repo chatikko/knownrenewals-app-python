@@ -1,4 +1,4 @@
-from functools import lru_cache
+﻿from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     email_verification_expire_minutes: int = 60 * 24
     resend_verification_cooldown_seconds: int = 60
     trial_period_days: int = 14
+    trial_grace_period_days: int = 14
 
     admin_emails: str = ""
 

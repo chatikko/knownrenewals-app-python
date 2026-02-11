@@ -1,5 +1,4 @@
-from fastapi import APIRouter, Depends, Header, Request, status
-from datetime import datetime, timedelta, timezone
+﻿from fastapi import APIRouter, Depends, Header, Request, status
 import structlog
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +12,7 @@ from app.schemas.billing import BillingActionResponse, BillingStatusResponse, Ch
 from app.schemas.common import CommonResponse
 from app.core.config import get_settings
 from app.services.account_limits import normalize_plan_tier
+from app.services.billing_access import resolve_billing_access_state
 from app.services.stripe import stripe_service
 
 router = APIRouter(prefix="/billing", tags=["billing"])
@@ -31,17 +31,26 @@ async def billing_status(
     current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> CommonResponse[BillingStatusResponse]:
     account = await db.get(Account, current_user.account_id)
+
     cancel_at_period_end = False
+    effective_status: str | None = getattr(account, "status", None)
     trial_days_left: int | None = None
+    grace_days_left: int | None = None
+    read_only_mode = False
+    trial_expired = False
+
+    if account:
+        access = resolve_billing_access_state(account, settings)
+        effective_status = access.status
+        trial_days_left = access.trial_days_left
+        grace_days_left = access.grace_days_left
+        read_only_mode = access.read_only_mode
+        trial_expired = access.trial_expired
+
     if account and account.stripe_subscription_id:
         try:
             subscription = stripe_service.get_subscription(account.stripe_subscription_id)
             cancel_at_period_end = bool(getattr(subscription, "cancel_at_period_end", False))
-            trial_end = getattr(subscription, "trial_end", None)
-            if account.status == "trialing" and trial_end:
-                now = datetime.now(timezone.utc)
-                trial_end_dt = datetime.fromtimestamp(int(trial_end), tz=timezone.utc)
-                trial_days_left = max(0, (trial_end_dt.date() - now.date()).days)
         except Exception as exc:
             logger.warning(
                 "billing.status.subscription_lookup_failed",
@@ -49,12 +58,6 @@ async def billing_status(
                 subscription_id=account.stripe_subscription_id,
                 error=str(exc),
             )
-    if account and account.status == "trialing" and trial_days_left is None:
-        created_at = account.created_at
-        if created_at:
-            now = datetime.now(timezone.utc)
-            trial_end_dt = created_at + timedelta(days=settings.trial_period_days)
-            trial_days_left = max(0, (trial_end_dt.date() - now.date()).days)
 
     founders_count = await db.scalar(select(func.count()).select_from(Account).where(Account.plan_tier == "founders"))
     founders_limit = 50
@@ -63,14 +66,17 @@ async def billing_status(
 
     data = BillingStatusResponse(
         plan_tier=getattr(account, "plan_tier", None),
-        plan=account.plan,
-        status=account.status,
+        plan=getattr(account, "plan", None),
+        status=effective_status,
         cancel_at_period_end=cancel_at_period_end,
         trial_days_left=trial_days_left,
+        grace_days_left=grace_days_left,
+        read_only_mode=read_only_mode,
+        trial_expired=trial_expired,
         founders_available=founders_available,
         founders_slots_remaining=founders_slots_remaining,
-        stripe_customer_id=account.stripe_customer_id,
-        stripe_subscription_id=account.stripe_subscription_id,
+        stripe_customer_id=getattr(account, "stripe_customer_id", None),
+        stripe_subscription_id=getattr(account, "stripe_subscription_id", None),
     )
     return CommonResponse(data=data, status_code=status.HTTP_200_OK)
 

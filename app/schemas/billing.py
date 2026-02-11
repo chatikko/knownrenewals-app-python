@@ -1,4 +1,4 @@
-from typing import Literal
+﻿from typing import Literal
 
 from pydantic import BaseModel, HttpUrl
 
@@ -32,6 +32,9 @@ class BillingStatusResponse(BaseModel):
     status: str | None = None
     cancel_at_period_end: bool = False
     trial_days_left: int | None = None
+    grace_days_left: int | None = None
+    read_only_mode: bool = False
+    trial_expired: bool = False
     founders_available: bool = True
     founders_slots_remaining: int | None = None
     stripe_customer_id: str | None = None

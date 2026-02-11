@@ -1,10 +1,10 @@
-from datetime import date
+﻿from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_billing_active_user
+from app.api.deps import get_current_billing_read_user, get_current_billing_write_user
 from app.db.models.contract import Contract
 from app.db.models.user import User
 from app.db.session import get_db
@@ -16,7 +16,7 @@ router = APIRouter(prefix="/contracts", tags=["contracts"])
 
 @router.get("/", response_model=ListResponse[ContractRead])
 async def list_contracts(
-    current_user: User = Depends(get_current_billing_active_user),
+    current_user: User = Depends(get_current_billing_read_user),
     db: AsyncSession = Depends(get_db),
 ) -> ListResponse[ContractRead]:
     result = await db.execute(
@@ -29,7 +29,7 @@ async def list_contracts(
 @router.post("/", response_model=CommonResponse[ContractRead], status_code=status.HTTP_201_CREATED)
 async def create_contract(
     payload: ContractCreate,
-    current_user: User = Depends(get_current_billing_active_user),
+    current_user: User = Depends(get_current_billing_write_user),
     db: AsyncSession = Depends(get_db),
 ) -> CommonResponse[ContractRead]:
     payload_data = payload.model_dump()
@@ -55,7 +55,7 @@ async def create_contract(
 @router.get("/{contract_id}", response_model=CommonResponse[ContractRead])
 async def get_contract(
     contract_id: str,
-    current_user: User = Depends(get_current_billing_active_user),
+    current_user: User = Depends(get_current_billing_read_user),
     db: AsyncSession = Depends(get_db),
 ) -> CommonResponse[ContractRead]:
     contract = await _get_contract_or_404(contract_id, current_user, db)
@@ -66,7 +66,7 @@ async def get_contract(
 async def update_contract(
     contract_id: str,
     payload: ContractUpdate,
-    current_user: User = Depends(get_current_billing_active_user),
+    current_user: User = Depends(get_current_billing_write_user),
     db: AsyncSession = Depends(get_db),
 ) -> CommonResponse[ContractRead]:
     contract = await _get_contract_or_404(contract_id, current_user, db)
@@ -97,7 +97,7 @@ async def update_contract(
 @router.delete("/{contract_id}", response_model=CommonResponse[None], status_code=status.HTTP_200_OK)
 async def delete_contract(
     contract_id: str,
-    current_user: User = Depends(get_current_billing_active_user),
+    current_user: User = Depends(get_current_billing_write_user),
     db: AsyncSession = Depends(get_db),
 ) -> CommonResponse[None]:
     contract = await _get_contract_or_404(contract_id, current_user, db)

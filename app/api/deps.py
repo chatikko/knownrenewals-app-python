@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, Request, status
+﻿from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
 from redis.asyncio import Redis
@@ -11,6 +11,7 @@ from app.core.security import decode_token
 from app.db.models.account import Account
 from app.db.models.user import User
 from app.db.session import get_db
+from app.services.billing_access import resolve_billing_access_state
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 settings = get_settings()
@@ -20,14 +21,11 @@ async def rate_limit_auth(request: Request, redis: Redis = Depends(get_redis_cli
     """
     Naive fixed-window limiter keyed by IP path for signup/login flows.
     """
-    
     limiter_key = f"rl:{request.client.host}:{request.url.path}"
-    print(limiter_key, 'limiter_key')
     try:
         current = await redis.incr(limiter_key)
-    except Exception as e:
-        print(e, 'redis1111111111111111111')
-        return 
+    except Exception:
+        return
     if current == 1:
         await redis.expire(limiter_key, settings.rate_limit_window_seconds)
     if current > settings.rate_limit_auth:
@@ -65,7 +63,7 @@ async def get_current_admin(
     return user
 
 
-async def get_current_billing_active_user(
+async def get_current_billing_read_user(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> User:
@@ -73,9 +71,36 @@ async def get_current_billing_active_user(
     if not account:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
 
-    if account.status not in {"active", "trialing"}:
+    access = resolve_billing_access_state(account, settings)
+    if not access.read_allowed:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail="Active subscription required. Please update billing to continue.",
+            detail="Subscription required. Please update billing to continue.",
         )
     return current_user
+
+
+async def get_current_billing_write_user(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    account = await db.get(Account, current_user.account_id)
+    if not account:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+
+    access = resolve_billing_access_state(account, settings)
+    if not access.read_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Subscription required. Please update billing to continue.",
+        )
+    if not access.write_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Trial expired. Account is in read-only mode. Upgrade to continue editing.",
+        )
+    return current_user
+
+
+# Backward compatibility for existing imports.
+get_current_billing_active_user = get_current_billing_write_user
