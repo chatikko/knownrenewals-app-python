@@ -215,6 +215,48 @@ async def list_channels(token: str) -> list[SlackChannel]:
     return channels
 
 
+def _normalize_channel_name(name: str) -> str:
+    normalized = "".join(ch for ch in name.lower() if ch.isalnum() or ch in {"-", "_"}).strip("-_")
+    if not normalized:
+        return "knowrenewal"
+    return normalized[:80]
+
+
+async def _find_channel_by_name(token: str, channel_name: str) -> SlackChannel | None:
+    target = _normalize_channel_name(channel_name)
+    channels = await list_channels(token)
+    for channel in channels:
+        if channel.name.lower() == target:
+            return channel
+    return None
+
+
+async def get_or_create_channel(token: str, channel_name: str) -> SlackChannel | None:
+    normalized_name = _normalize_channel_name(channel_name)
+    try:
+        data = await _post_slack_api(
+            token,
+            "conversations.create",
+            {
+                "name": normalized_name,
+                "is_private": False,
+            },
+        )
+        channel_data = data.get("channel") or {}
+        channel_id = channel_data.get("id")
+        created_name = channel_data.get("name")
+        if channel_id and created_name:
+            return SlackChannel(id=channel_id, name=created_name)
+    except SlackApiError as exc:
+        if exc.error_code in {"name_taken", "already_exists"}:
+            return await _find_channel_by_name(token, normalized_name)
+        if exc.error_code in {"missing_scope", "restricted_action", "not_allowed_token_type"}:
+            return None
+        raise
+
+    return await _find_channel_by_name(token, normalized_name)
+
+
 async def post_message(
     token: str,
     channel_id: str,
@@ -262,6 +304,7 @@ async def upsert_integration_from_oauth(
     access_token = oauth_payload.get("access_token")
     if not access_token:
         raise SlackApiError("Slack OAuth payload did not include an access token.")
+    access_token_str = str(access_token)
 
     team = oauth_payload.get("team") or {}
     workspace_id = str(team.get("id") or "")
@@ -281,15 +324,38 @@ async def upsert_integration_from_oauth(
     integration.workspace_id = workspace_id
     integration.workspace_name = workspace_name
     integration.bot_user_id = oauth_payload.get("bot_user_id")
-    integration.bot_access_token_encrypted = encrypt_bot_token(str(access_token))
-    integration.bot_token_last4 = str(access_token)[-4:]
+    integration.bot_access_token_encrypted = encrypt_bot_token(access_token_str)
+    integration.bot_token_last4 = access_token_str[-4:]
     integration.default_channel_id = incoming_webhook.get("channel_id") or integration.default_channel_id
     integration.default_channel_name = incoming_webhook.get("channel") or integration.default_channel_name
+
+    channel_warning: tuple[str, str] | None = None
+    if not integration.default_channel_id:
+        try:
+            auto_channel = await get_or_create_channel(access_token_str, "knowrenewal")
+            if auto_channel:
+                integration.default_channel_id = auto_channel.id
+                integration.default_channel_name = auto_channel.name
+            else:
+                channel_warning = (
+                    "default_channel_setup_failed",
+                    "Could not auto-create #knowrenewal. Add channels:manage scope and reinstall app, or choose a channel manually.",
+                )
+        except SlackApiError as exc:
+            channel_warning = (
+                exc.error_code or "default_channel_setup_failed",
+                f"Could not auto-create #knowrenewal. Slack error: {exc.error_code or 'unknown'}.",
+            )
+
     integration.is_active = True
     integration.is_degraded = False
     integration.last_error_code = None
     integration.last_error_message = None
     integration.last_error_at = None
+    if channel_warning:
+        integration.last_error_code = channel_warning[0]
+        integration.last_error_message = channel_warning[1]
+        integration.last_error_at = _now_utc()
     integration.connected_by_user_id = connected_by_user_id
     integration.connected_at = _now_utc()
     integration.disconnected_at = None
