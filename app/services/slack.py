@@ -416,6 +416,10 @@ async def send_account_alert(
             blocks=blocks,
         )
     except SlackApiError as exc:
+        error_message = str(exc)
+        if exc.error_code:
+            error_message = f"{error_message} (code={exc.error_code})"
+
         log = SlackDeliveryLog(
             account_id=account_id,
             contract_id=contract_id,
@@ -423,14 +427,14 @@ async def send_account_alert(
             success=False,
             http_status=exc.status_code,
             error_code=exc.error_code,
-            error_message=str(exc),
+            error_message=error_message,
         )
         db.add(log)
         if _is_permanent_delivery_error(exc):
             integration.is_active = False
             integration.is_degraded = True
             integration.last_error_code = exc.error_code or "delivery_disabled"
-            integration.last_error_message = str(exc)
+            integration.last_error_message = error_message
             integration.last_error_at = _now_utc()
             integration.disconnected_at = _now_utc()
             integration.bot_access_token_encrypted = None
@@ -441,7 +445,7 @@ async def send_account_alert(
                 integration,
                 success=False,
                 error_code=exc.error_code,
-                error_message=str(exc),
+                error_message=error_message,
             )
         await db.commit()
         return False
