@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Enum, ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -29,10 +29,10 @@ class SlackIntegration(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     is_degraded: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     last_error_code: Mapped[str | None] = mapped_column(String(128))
     last_error_message: Mapped[str | None] = mapped_column(String(1024))
-    last_error_at: Mapped[datetime | None]
+    last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     connected_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
-    connected_at: Mapped[datetime | None]
-    disconnected_at: Mapped[datetime | None]
+    connected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    disconnected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     account = relationship("Account", back_populates="slack_integration")
     connected_by_user = relationship("User")
@@ -52,7 +52,7 @@ class SlackAlertState(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
     )
     event_date_key: Mapped[str] = mapped_column(String(32), nullable=False)
-    sent_at: Mapped[datetime]
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     message_ts: Mapped[str | None] = mapped_column(String(64))
 
     account = relationship("Account")
