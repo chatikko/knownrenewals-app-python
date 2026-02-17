@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     slack_client_secret: str | None = None
     slack_oauth_redirect_uri: str | None = None
     slack_post_connect_path: str = "/integrations/slack"
-    slack_bot_scopes: str = "chat:write,channels:read,groups:read,channels:manage"
+    slack_bot_scopes: str = "chat:write,chat:write.public,channels:read,groups:read,channels:manage"
     slack_oauth_state_ttl_seconds: int = 600
     slack_max_retries: int = 3
     slack_base_backoff_seconds: float = 0.5

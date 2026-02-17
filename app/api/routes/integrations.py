@@ -242,9 +242,9 @@ async def slack_test_message(
         last_test = await slack_service.get_last_test_log(db, context.account.id)
         error_code = (last_test.error_code or "").strip() if last_test else ""
         error_hint = {
-            "not_in_channel": "Invite the Slack app to the selected channel, then retry.",
-            "channel_not_found": "The selected channel is unavailable. Choose a different channel and save config.",
-            "missing_scope": "Reinstall Slack app with required scopes: chat:write, channels:read, groups:read.",
+            "not_in_channel": "Invite the Slack app to the selected channel, or choose another channel and save config before retrying.",
+            "channel_not_found": "The selected channel is unavailable. Choose a different channel, save config, and retry.",
+            "missing_scope": "Reinstall Slack app with required scopes: chat:write, chat:write.public, channels:read, groups:read.",
             "invalid_auth": "Slack token is invalid. Reconnect Slack.",
             "token_revoked": "Slack token was revoked. Reconnect Slack.",
             "account_inactive": "Slack workspace/app is inactive. Reconnect Slack.",

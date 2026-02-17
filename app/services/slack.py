@@ -222,6 +222,15 @@ def _normalize_channel_name(name: str) -> str:
     return normalized[:80]
 
 
+def _sanitize_incoming_channel_name(name: str | None) -> str | None:
+    if not name:
+        return None
+    normalized = name.strip()
+    if not normalized:
+        return None
+    return normalized[1:] if normalized.startswith("#") else normalized
+
+
 async def _find_channel_by_name(token: str, channel_name: str) -> SlackChannel | None:
     target = _normalize_channel_name(channel_name)
     channels = await list_channels(token)
@@ -327,7 +336,9 @@ async def upsert_integration_from_oauth(
     integration.bot_access_token_encrypted = encrypt_bot_token(access_token_str)
     integration.bot_token_last4 = access_token_str[-4:]
     integration.default_channel_id = incoming_webhook.get("channel_id") or integration.default_channel_id
-    integration.default_channel_name = incoming_webhook.get("channel") or integration.default_channel_name
+    integration.default_channel_name = (
+        _sanitize_incoming_channel_name(incoming_webhook.get("channel")) or integration.default_channel_name
+    )
 
     channel_warning: tuple[str, str] | None = None
     if not integration.default_channel_id:
@@ -417,21 +428,27 @@ async def _update_degraded_state(db: AsyncSession, integration: SlackIntegration
     integration.is_degraded = len(recent) >= 3 and all(not item for item in recent)
 
 
-def _is_permanent_delivery_error(error: SlackApiError) -> bool:
-    permanent_codes = {
+def _is_auth_token_error(error: SlackApiError) -> bool:
+    auth_error_codes = {
         "invalid_auth",
         "account_inactive",
         "token_revoked",
         "not_authed",
-        "channel_not_found",
-        "not_in_channel",
-        "is_archived",
     }
-    if error.error_code and error.error_code in permanent_codes:
+    if error.error_code and error.error_code in auth_error_codes:
         return True
     if error.status_code and error.status_code in {401, 403}:
         return True
     return False
+
+
+def _is_channel_config_error(error: SlackApiError) -> bool:
+    channel_error_codes = {
+        "channel_not_found",
+        "not_in_channel",
+        "is_archived",
+    }
+    return bool(error.error_code and error.error_code in channel_error_codes)
 
 
 async def send_account_alert(
@@ -496,7 +513,7 @@ async def send_account_alert(
             error_message=error_message,
         )
         db.add(log)
-        if _is_permanent_delivery_error(exc):
+        if _is_auth_token_error(exc):
             integration.is_active = False
             integration.is_degraded = True
             integration.last_error_code = exc.error_code or "delivery_disabled"
@@ -505,6 +522,15 @@ async def send_account_alert(
             integration.disconnected_at = _now_utc()
             integration.bot_access_token_encrypted = None
             integration.bot_token_last4 = None
+        elif _is_channel_config_error(exc):
+            integration.is_active = True
+            integration.is_degraded = True
+            integration.last_error_code = exc.error_code or "channel_reconfiguration_required"
+            integration.last_error_message = error_message
+            integration.last_error_at = _now_utc()
+            integration.default_channel_id = None
+            integration.default_channel_name = None
+            integration.disconnected_at = None
         else:
             await _update_degraded_state(
                 db,
