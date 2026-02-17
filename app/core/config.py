@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     resend_api_key: str | None = None
     resend_max_retries: int = 3
     resend_base_backoff_seconds: float = 0.5
+    lead_magnet_enabled: bool = True
+    lead_magnet_template_path: str = "app/assets/renewal-tracking-template.xlsx"
+    lead_magnet_resend_cooldown_seconds: int = 1800
 
     stripe_api_key: str
     stripe_webhook_secret: str

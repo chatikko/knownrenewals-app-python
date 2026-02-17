@@ -19,6 +19,12 @@ from app.schemas.integrations import (
     SlackStatusResponse,
     SlackTestResponse,
 )
+from app.schemas.lead_magnets import (
+    LeadMagnetDownloadRead,
+    LeadMagnetStatsResponse,
+    LeadMagnetSubmitRequest,
+    LeadMagnetSubmitResponse,
+)
 from app.schemas.user import MemberCreate, MemberRead, UserCreate, UserRead
 
 __all__ = [
@@ -49,6 +55,10 @@ __all__ = [
     "SlackStatusResponse",
     "SlackConfigUpdate",
     "SlackTestResponse",
+    "LeadMagnetSubmitRequest",
+    "LeadMagnetSubmitResponse",
+    "LeadMagnetStatsResponse",
+    "LeadMagnetDownloadRead",
     "UserCreate",
     "UserRead",
     "MemberCreate",

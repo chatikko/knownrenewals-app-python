@@ -43,14 +43,8 @@ class EmailService:
         self._assert_resend_config()
         await asyncio.to_thread(resend.Domains.list)
 
-    async def send_email(self, to_email: str, subject: str, body: str) -> None:
+    async def _send_payload(self, payload: resend.Emails.SendParams) -> None:
         self._assert_resend_config()
-        payload: resend.Emails.SendParams = {
-            "from": self._mail_from,
-            "to": [to_email],
-            "subject": subject,
-            "text": body,
-        }
         last_exc: Exception | None = None
 
         for attempt in range(self._max_retries + 1):
@@ -66,6 +60,39 @@ class EmailService:
 
         if last_exc:
             raise last_exc
+
+    async def send_email(self, to_email: str, subject: str, body: str) -> None:
+        payload: resend.Emails.SendParams = {
+            "from": self._mail_from,
+            "to": [to_email],
+            "subject": subject,
+            "text": body,
+        }
+        await self._send_payload(payload)
+
+    async def send_email_with_attachment(
+        self,
+        to_email: str,
+        subject: str,
+        body: str,
+        filename: str,
+        content_bytes: bytes,
+        mime_type: str,
+    ) -> None:
+        payload: resend.Emails.SendParams = {
+            "from": self._mail_from,
+            "to": [to_email],
+            "subject": subject,
+            "text": body,
+            "attachments": [
+                {
+                    "filename": filename,
+                    "content_type": mime_type,
+                    "content": list(content_bytes),
+                }
+            ],
+        }
+        await self._send_payload(payload)
 
     async def send_verification_email(self, to_email: str, token: str) -> None:
         encoded_token = quote(token, safe="")

@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api.routes import auth, billing, contracts, integrations, users
+from app.api.routes import auth, billing, contracts, integrations, lead_magnets, users
 from app.api.routes.admin import accounts, auth_events, billing_events, contracts as admin_contracts, users as admin_users
 from app.core.config import get_settings
 from app.schemas.common import CommonResponse
@@ -47,6 +47,7 @@ app.include_router(contracts.router)
 app.include_router(billing.router)
 app.include_router(users.router)
 app.include_router(integrations.router)
+app.include_router(lead_magnets.router)
 app.include_router(admin_users.router)
 app.include_router(accounts.router)
 app.include_router(admin_contracts.router)
