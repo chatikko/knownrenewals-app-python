@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_billing_read_user, get_current_billing_write_user
+from app.core.config import get_settings
 from app.db.models.contract import Contract
 from app.db.models.user import User
 from app.db.session import get_db
@@ -12,6 +13,7 @@ from app.schemas.common import CommonResponse, ListResponse
 from app.schemas.contract import ContractCreate, ContractRead, ContractUpdate
 
 router = APIRouter(prefix="/contracts", tags=["contracts"])
+settings = get_settings()
 
 
 @router.get("/", response_model=ListResponse[ContractRead])
@@ -49,6 +51,10 @@ async def create_contract(
     db.add(contract)
     await db.commit()
     await db.refresh(contract)
+    if settings.slack_integration_enabled:
+        from app.tasks.slack_alerts import evaluate_contract_slack_alerts
+
+        evaluate_contract_slack_alerts.delay(contract.id)
     return CommonResponse(data=contract, status_code=status.HTTP_201_CREATED)
 
 
@@ -91,6 +97,10 @@ async def update_contract(
     contract.status = _derive_status(contract.notice_deadline)
     await db.commit()
     await db.refresh(contract)
+    if settings.slack_integration_enabled:
+        from app.tasks.slack_alerts import evaluate_contract_slack_alerts
+
+        evaluate_contract_slack_alerts.delay(contract.id)
     return CommonResponse(data=contract, status_code=status.HTTP_200_OK)
 
 

@@ -12,6 +12,7 @@ class Account(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     owner_email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     stripe_customer_id: Mapped[str | None] = mapped_column(String(255), unique=True)
     stripe_subscription_id: Mapped[str | None] = mapped_column(String(255), unique=True)
+    timezone: Mapped[str] = mapped_column(String(64), default="UTC", nullable=False)
     plan_tier: Mapped[str] = mapped_column(
         Enum("trialing", "founders", "pro", "team", name="plan_tier_enum"),
         default="pro",
@@ -23,7 +24,9 @@ class Account(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     users = relationship("User", back_populates="account", cascade="all, delete-orphan")
     contracts = relationship("Contract", back_populates="account", cascade="all, delete-orphan")
+    slack_integration = relationship("SlackIntegration", back_populates="account", uselist=False, cascade="all, delete-orphan")
 
 
 # Ensure User is registered in the mapper registry when this module is imported.
 from app.db.models.user import User  # noqa: E402,F401
+from app.db.models.slack import SlackIntegration  # noqa: E402,F401

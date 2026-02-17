@@ -12,6 +12,13 @@ from app.schemas.auth import LoginRequest, RefreshRequest, SignupRequest, Signup
 from app.schemas.billing import BillingStatusResponse, CheckoutSessionRequest, CheckoutSessionResponse
 from app.schemas.common import CommonResponse, ListResponse
 from app.schemas.contract import ContractCreate, ContractRead, ContractUpdate
+from app.schemas.integrations import (
+    SlackChannelRead,
+    SlackConfigUpdate,
+    SlackInstallUrlResponse,
+    SlackStatusResponse,
+    SlackTestResponse,
+)
 from app.schemas.user import MemberCreate, MemberRead, UserCreate, UserRead
 
 __all__ = [
@@ -37,6 +44,11 @@ __all__ = [
     "ContractCreate",
     "ContractRead",
     "ContractUpdate",
+    "SlackInstallUrlResponse",
+    "SlackChannelRead",
+    "SlackStatusResponse",
+    "SlackConfigUpdate",
+    "SlackTestResponse",
     "UserCreate",
     "UserRead",
     "MemberCreate",

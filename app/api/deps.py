@@ -1,4 +1,6 @@
-﻿from fastapi import Depends, HTTPException, Request, status
+from typing import NamedTuple
+
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
 from redis.asyncio import Redis
@@ -15,6 +17,11 @@ from app.services.billing_access import resolve_billing_access_state
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 settings = get_settings()
+
+
+class AccountAdminContext(NamedTuple):
+    user: User
+    account: Account
 
 
 async def rate_limit_auth(request: Request, redis: Redis = Depends(get_redis_client)) -> None:
@@ -61,6 +68,21 @@ async def get_current_admin(
     if not user.is_admin and user.email.lower() not in admin_emails:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
     return user
+
+
+async def get_current_account_admin(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AccountAdminContext:
+    account = await db.get(Account, current_user.account_id)
+    if not account:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+
+    is_owner = current_user.email.strip().lower() == account.owner_email.strip().lower()
+    if not (current_user.is_admin or is_owner):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account admin access required")
+
+    return AccountAdminContext(user=current_user, account=account)
 
 
 async def get_current_billing_read_user(

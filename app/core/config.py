@@ -8,6 +8,17 @@ class Settings(BaseSettings):
     app_name: str = "knowrenewals"
     app_env: str = "local"
     frontend_base_url: str = "http://localhost:5173"
+    slack_integration_enabled: bool = True
+    slack_client_id: str | None = None
+    slack_client_secret: str | None = None
+    slack_oauth_redirect_uri: str | None = None
+    slack_post_connect_path: str = "/integrations/slack"
+    slack_bot_scopes: str = "chat:write,channels:read,groups:read"
+    slack_oauth_state_ttl_seconds: int = 600
+    slack_max_retries: int = 3
+    slack_base_backoff_seconds: float = 0.5
+    slack_token_encryption_key: str | None = None
+    slack_pilot_account_ids: str = ""
 
     database_url: str
     redis_url: str
@@ -66,6 +77,10 @@ class Settings(BaseSettings):
     @property
     def cors_headers_list(self) -> list[str]:
         return [header.strip() for header in self.cors_allow_headers.split(",") if header.strip()]
+
+    @property
+    def slack_pilot_account_ids_list(self) -> list[str]:
+        return [account_id.strip() for account_id in self.slack_pilot_account_ids.split(",") if account_id.strip()]
 
 
 @lru_cache

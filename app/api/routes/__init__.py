@@ -1,4 +1,4 @@
-from . import auth, billing, contracts, users
+from . import auth, billing, contracts, integrations, users
 from .admin import accounts, auth_events, billing_events, contracts as admin_contracts, users as admin_users
 
 __all__ = [
@@ -6,6 +6,7 @@ __all__ = [
     "billing",
     "contracts",
     "users",
+    "integrations",
     "admin_users",
     "accounts",
     "admin_contracts",
