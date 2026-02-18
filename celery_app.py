@@ -15,6 +15,7 @@ celery_app = Celery(
 celery_app.conf.update(
     timezone="UTC",
     task_default_queue="default",
+    broker_connection_retry_on_startup=True,
     beat_schedule={
         "daily-reminder-scan": {
             "task": "app.tasks.reminders.schedule_notice_reminders",
