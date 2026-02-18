@@ -1,6 +1,7 @@
 from datetime import date, timedelta
+from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, Enum, ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Date, Enum, ForeignKey, Index, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from app.db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -20,12 +21,20 @@ class Contract(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
         default="Contract",
     )
+    external_contract_id: Mapped[str | None] = mapped_column(String(64))
+    category: Mapped[str | None] = mapped_column(String(100))
     renewal_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     contract_name: Mapped[str | None] = mapped_column(String(255))
+    start_date: Mapped[date | None] = mapped_column(Date())
     renewal_date: Mapped[date] = mapped_column(nullable=False)
+    billing_frequency: Mapped[str | None] = mapped_column(String(50))
+    contract_value: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    annualized_value: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    auto_renew: Mapped[bool | None] = mapped_column(Boolean())
     notice_period_days: Mapped[int] = mapped_column(nullable=False, default=30)
     notice_deadline: Mapped[date] = mapped_column(nullable=False, index=True)
     owner_email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    notes: Mapped[str | None] = mapped_column(Text())
     status: Mapped[str] = mapped_column(
         Enum("safe", "soon", "risk", name="contract_status_enum"),
         default="safe",

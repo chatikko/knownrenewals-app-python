@@ -34,18 +34,22 @@ async def create_contract(
     current_user: User = Depends(get_current_billing_write_user),
     db: AsyncSession = Depends(get_db),
 ) -> CommonResponse[ContractRead]:
-    payload_data = payload.model_dump()
+    payload_data = payload.model_dump(exclude_none=True)
     renewal_type = payload_data.get("renewal_type") or "Contract"
     renewal_name = payload_data.get("renewal_name") or payload_data.get("contract_name") or payload_data.get("vendor_name")
+    notice_period_days = int(payload_data.get("notice_period_days", 30))
+    owner_email = payload_data.get("owner_email") or current_user.email
     payload_data["renewal_type"] = renewal_type
     payload_data["renewal_name"] = renewal_name
+    payload_data["notice_period_days"] = notice_period_days
+    payload_data["owner_email"] = owner_email
     payload_data["contract_name"] = payload_data.get("contract_name") or _compose_contract_name(renewal_type, renewal_name)
 
     contract = Contract(
         account_id=current_user.account_id,
         **payload_data,
     )
-    contract.notice_deadline = Contract.compute_notice_deadline(payload.renewal_date, payload.notice_period_days)
+    contract.notice_deadline = Contract.compute_notice_deadline(payload.renewal_date, notice_period_days)
     contract.status = _derive_status(contract.notice_deadline)
 
     db.add(contract)
