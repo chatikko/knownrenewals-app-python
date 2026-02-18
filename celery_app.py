@@ -2,6 +2,7 @@ from celery import Celery
 from celery.schedules import crontab
 
 from app.core.config import get_settings
+from app.db import base as _db_base  # noqa: F401  # Ensure ORM models are registered in worker processes.
 
 settings = get_settings()
 

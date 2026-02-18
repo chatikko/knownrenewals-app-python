@@ -25,3 +25,8 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     account = relationship("Account", back_populates="users")
     refresh_tokens = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
     auth_events = relationship("AuthEvent", back_populates="user", cascade="all, delete-orphan")
+
+
+# Ensure dependent models are registered in mapper registry when this module is imported.
+from app.db.models.auth_event import AuthEvent  # noqa: E402,F401
+from app.db.models.refresh_token import RefreshToken  # noqa: E402,F401
