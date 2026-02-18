@@ -6,7 +6,7 @@ import hashlib
 import random
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -764,7 +764,72 @@ def _resolve_tz(name: str | None) -> ZoneInfo:
         return ZoneInfo("UTC")
 
 
-async def _daily_digest_text(db: AsyncSession, account_id: str, today_local: date) -> str | None:
+DIGEST_SECTION_ITEM_LIMIT = 6
+DIGEST_SECTION_MAX_CHARS = 2600
+
+
+def _truncate_text(value: str, max_chars: int, *, suffix: str = "...") -> str:
+    if len(value) <= max_chars:
+        return value
+    cut_at = max_chars - len(suffix)
+    if cut_at <= 0:
+        return suffix[:max_chars]
+    return value[:cut_at].rstrip() + suffix
+
+
+def _owner_or_unassigned(contract: Contract) -> str:
+    owner = (contract.owner_email or "").strip()
+    return owner if owner else "Unassigned"
+
+
+def _frontend_contracts_url() -> str:
+    return f"{settings.frontend_base_url.rstrip('/')}/contracts"
+
+
+def _digest_item_line(contract: Contract, *, date_label: str, date_value: date) -> str:
+    return (
+        f"- *Vendor:* {contract.vendor_name} | "
+        f"*Renewal:* {_display_name(contract)} | "
+        f"*{date_label}:* {_format_date(date_value)} | "
+        f"*Owner:* {_owner_or_unassigned(contract)} | "
+        f"<{_frontend_contract_url(contract.id)}|Open>"
+    )
+
+
+def _build_digest_section_block(
+    title: str,
+    items: list[Contract],
+    *,
+    date_label: str,
+    date_resolver: Callable[[Contract], date],
+    max_items: int = DIGEST_SECTION_ITEM_LIMIT,
+    max_chars: int = DIGEST_SECTION_MAX_CHARS,
+) -> dict[str, Any]:
+    lines = [f"*{title}* ({len(items)})"]
+    if not items:
+        lines.append("- none")
+    else:
+        shown = items[:max_items]
+        lines.extend(_digest_item_line(item, date_label=date_label, date_value=date_resolver(item)) for item in shown)
+        if len(items) > max_items:
+            lines.append(f"- ...and {len(items) - max_items} more")
+
+    section_text = _truncate_text("\n".join(lines), max_chars)
+    return {
+        "type": "section",
+        "text": {
+            "type": "mrkdwn",
+            "text": section_text,
+        },
+    }
+
+
+async def _daily_digest_payload(
+    db: AsyncSession,
+    account_id: str,
+    today_local: date,
+    timezone_name: str,
+) -> tuple[str, list[dict[str, Any]]] | None:
     result = await db.execute(
         select(Contract).where(Contract.account_id == account_id).order_by(Contract.renewal_date.asc())
     )
@@ -772,32 +837,76 @@ async def _daily_digest_text(db: AsyncSession, account_id: str, today_local: dat
     if not contracts:
         return None
 
-    due_30 = [item for item in contracts if 0 <= (item.renewal_date - today_local).days <= 30]
-    due_7 = [item for item in due_30 if (item.renewal_date - today_local).days <= 7]
+    due_30_all = [item for item in contracts if 0 <= (item.renewal_date - today_local).days <= 30]
+    due_7 = [item for item in due_30_all if 0 <= (item.renewal_date - today_local).days <= 7]
+    due_30 = [item for item in due_30_all if 8 <= (item.renewal_date - today_local).days <= 30]
     risk_items = [item for item in contracts if _derive_risk(item, today_local)]
 
-    if not due_30 and not risk_items:
+    # Keep prior gating behavior: if nothing is within 30 days and no risk, do not send.
+    if not due_30_all and not risk_items:
         return None
 
-    def _render(items: list[Contract], title: str, limit: int = 8) -> list[str]:
-        lines = [f"*{title}* ({len(items)})"]
-        if not items:
-            lines.append("- none")
-            return lines
-        for contract in items[:limit]:
-            lines.append(
-                f"- {contract.vendor_name} ({contract.renewal_date.isoformat()}) - "
-                f"<{_frontend_contract_url(contract.id)}|Open>"
-            )
-        if len(items) > limit:
-            lines.append(f"- ...and {len(items) - limit} more")
-        return lines
+    header_date = _format_date(today_local)
+    summary_line = f"Risk: {len(risk_items)} | Due in 7 days: {len(due_7)} | Due in 30 days: {len(due_30)}"
 
-    lines: list[str] = [f":bell: *KnowRenewals daily digest* - {today_local.isoformat()}"]
-    lines.extend(_render(due_30, "Due in 30 days"))
-    lines.extend(_render(due_7, "Due in 7 days"))
-    lines.extend(_render(risk_items, "Risk renewals"))
-    return "\n".join(lines)
+    text = (
+        f"KnowRenewals daily digest ({header_date}, {timezone_name}). "
+        f"{summary_line}. Review renewals: {_frontend_contracts_url()}"
+    )
+    text = _truncate_text(text, 500)
+
+    blocks: list[dict[str, Any]] = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": "KnowRenewals Daily Digest"},
+        },
+        {
+            "type": "context",
+            "elements": [
+                {"type": "mrkdwn", "text": f"*Date:* {header_date}"},
+                {"type": "mrkdwn", "text": f"*Timezone:* {timezone_name}"},
+            ],
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*Summary*\n{summary_line}"},
+        },
+        {"type": "divider"},
+        _build_digest_section_block(
+            "Risk renewals",
+            risk_items,
+            date_label="Notice Deadline",
+            date_resolver=lambda item: item.notice_deadline,
+        ),
+        _build_digest_section_block(
+            "Due in 7 days",
+            due_7,
+            date_label="Renewal Date",
+            date_resolver=lambda item: item.renewal_date,
+        ),
+        _build_digest_section_block(
+            "Due in 30 days",
+            due_30,
+            date_label="Renewal Date",
+            date_resolver=lambda item: item.renewal_date,
+        ),
+        {
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "style": "primary",
+                    "text": {"type": "plain_text", "text": "Review Renewals"},
+                    "url": _frontend_contracts_url(),
+                }
+            ],
+        },
+        {
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": "KnowRenewals automated digest"}],
+        },
+    ]
+    return text, blocks
 
 
 async def schedule_daily_digests(db: AsyncSession) -> None:
@@ -824,9 +933,11 @@ async def schedule_daily_digests(db: AsyncSession) -> None:
         if local_now.hour != integration.digest_hour_local:
             continue
 
-        daily_text = await _daily_digest_text(db, account.id, local_now.date())
-        if not daily_text:
+        timezone_name = account.timezone or "UTC"
+        daily_payload = await _daily_digest_payload(db, account.id, local_now.date(), timezone_name)
+        if not daily_payload:
             continue
+        daily_text, daily_blocks = daily_payload
 
         await send_account_alert(
             db,
@@ -835,4 +946,5 @@ async def schedule_daily_digests(db: AsyncSession) -> None:
             event_date_key=local_now.date().isoformat(),
             plan_tier=account.plan_tier,
             text=daily_text,
+            blocks=daily_blocks,
         )
