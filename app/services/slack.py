@@ -276,7 +276,12 @@ async def post_message(
     last_error: SlackApiError | None = None
     for attempt in range(settings.slack_max_retries + 1):
         try:
-            payload: dict[str, Any] = {"channel": channel_id, "text": text}
+            payload: dict[str, Any] = {
+                "channel": channel_id,
+                "text": text,
+                "unfurl_links": False,
+                "unfurl_media": False,
+            }
             if blocks:
                 payload["blocks"] = blocks
             data = await _post_slack_api(token, "chat.postMessage", payload)
@@ -576,6 +581,122 @@ def _derive_risk(contract: Contract, today: date) -> bool:
     return (contract.notice_deadline - today).days <= 7
 
 
+def _display_name(contract: Contract) -> str:
+    return contract.renewal_name or contract.contract_name or "n/a"
+
+
+def _format_date(value: date) -> str:
+    return value.strftime("%b %d, %Y")
+
+
+def _format_relative_days(days: int) -> str:
+    if days > 0:
+        return f"{days} days"
+    if days == 0:
+        return "Today"
+    return f"Overdue by {abs(days)} days"
+
+
+def _build_risk_alert_message(contract: Contract, today: date) -> tuple[str, list[dict[str, Any]]]:
+    contract_url = _frontend_contract_url(contract.id)
+    days_to_notice = (contract.notice_deadline - today).days
+    summary = "Immediate review is recommended."
+    if days_to_notice > 0:
+        summary = f"Notice deadline is in {days_to_notice} day(s). Prepare renewal decision now."
+    elif days_to_notice == 0:
+        summary = "Notice deadline is today. Immediate action is required."
+    else:
+        summary = f"Notice deadline passed {abs(days_to_notice)} day(s) ago. Escalate immediately."
+
+    text = (
+        f"Risk renewal alert: {contract.vendor_name} - {_display_name(contract)}. "
+        f"Notice deadline {_format_date(contract.notice_deadline)}. {summary}"
+    )
+    blocks: list[dict[str, Any]] = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": "Risk Renewal Alert"},
+        },
+        {
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"*Vendor*\n{contract.vendor_name}"},
+                {"type": "mrkdwn", "text": f"*Renewal*\n{_display_name(contract)}"},
+                {"type": "mrkdwn", "text": f"*Notice Deadline*\n{_format_date(contract.notice_deadline)}"},
+                {"type": "mrkdwn", "text": f"*Time to Notice*\n{_format_relative_days(days_to_notice)}"},
+            ],
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*Action Required*\n{summary}"},
+        },
+        {
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "style": "danger",
+                    "text": {"type": "plain_text", "text": "Open Contract"},
+                    "url": contract_url,
+                }
+            ],
+        },
+        {
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": "KnowRenewals automated alert"}],
+        },
+    ]
+    return text, blocks
+
+
+def _build_due_soon_alert_message(contract: Contract, today: date) -> tuple[str, list[dict[str, Any]]]:
+    contract_url = _frontend_contract_url(contract.id)
+    days_to_renewal = (contract.renewal_date - today).days
+    summary = f"Renewal is due in {days_to_renewal} day(s). Confirm owner action."
+    if days_to_renewal == 0:
+        summary = "Renewal is due today. Confirm action and approval immediately."
+
+    text = (
+        f"Renewal due within 7 days: {contract.vendor_name} - {_display_name(contract)}. "
+        f"Renewal date {_format_date(contract.renewal_date)}. {summary}"
+    )
+    blocks: list[dict[str, Any]] = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": "Renewal Due Within 7 Days"},
+        },
+        {
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"*Vendor*\n{contract.vendor_name}"},
+                {"type": "mrkdwn", "text": f"*Renewal*\n{_display_name(contract)}"},
+                {"type": "mrkdwn", "text": f"*Renewal Date*\n{_format_date(contract.renewal_date)}"},
+                {"type": "mrkdwn", "text": f"*Time to Renewal*\n{_format_relative_days(days_to_renewal)}"},
+            ],
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*Recommended Action*\n{summary}"},
+        },
+        {
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "style": "primary",
+                    "text": {"type": "plain_text", "text": "Open Contract"},
+                    "url": contract_url,
+                }
+            ],
+        },
+        {
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": "KnowRenewals automated alert"}],
+        },
+    ]
+    return text, blocks
+
+
 async def evaluate_contract_alerts(db: AsyncSession, contract_id: str) -> None:
     contract = await db.get(Contract, contract_id)
     if not contract:
@@ -602,6 +723,7 @@ async def evaluate_contract_alerts(db: AsyncSession, contract_id: str) -> None:
     due_soon_now = 0 <= renewal_days <= 7
 
     if integration.instant_risk_enabled and risk_now:
+        risk_text, risk_blocks = _build_risk_alert_message(contract, today)
         await send_account_alert(
             db,
             account_id=contract.account_id,
@@ -609,16 +731,12 @@ async def evaluate_contract_alerts(db: AsyncSession, contract_id: str) -> None:
             event_type="risk",
             event_date_key=contract.notice_deadline.isoformat(),
             plan_tier=account.plan_tier,
-            text=(
-                f":rotating_light: *Risk renewal alert*\n"
-                f"*Vendor:* {contract.vendor_name}\n"
-                f"*Renewal:* {contract.renewal_name or contract.contract_name or 'n/a'}\n"
-                f"*Notice deadline:* {contract.notice_deadline.isoformat()}\n"
-                f"<{_frontend_contract_url(contract.id)}|Open contract>"
-            ),
+            text=risk_text,
+            blocks=risk_blocks,
         )
 
     if integration.instant_due_7d_enabled and due_soon_now:
+        due_text, due_blocks = _build_due_soon_alert_message(contract, today)
         await send_account_alert(
             db,
             account_id=contract.account_id,
@@ -626,13 +744,8 @@ async def evaluate_contract_alerts(db: AsyncSession, contract_id: str) -> None:
             event_type="due_7d",
             event_date_key=contract.renewal_date.isoformat(),
             plan_tier=account.plan_tier,
-            text=(
-                f":calendar: *Renewal due within 7 days*\n"
-                f"*Vendor:* {contract.vendor_name}\n"
-                f"*Renewal:* {contract.renewal_name or contract.contract_name or 'n/a'}\n"
-                f"*Renewal date:* {contract.renewal_date.isoformat()}\n"
-                f"<{_frontend_contract_url(contract.id)}|Open contract>"
-            ),
+            text=due_text,
+            blocks=due_blocks,
         )
 
 
